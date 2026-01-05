@@ -1,0 +1,28 @@
+services:
+  - type: web
+    name: bite-me-buddy-password-reset
+    env: python
+    region: singapore
+    buildCommand: |
+      pip install -r requirements.txt
+      python init_db.py
+    startCommand: gunicorn app:app
+    envVars:
+      - key: FLASK_SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        value: postgresql://bite_me_buddy_a6lb_user:68tt0EeyD9wKTb36ov9zSOmHvDS78mT4@dpg-d5ble8hr0fns73924vr0-a/bite_me_buddy_a6lb
+      - key: FIREBASE_API_KEY
+        value: AIzaSyBmZG2Xi5WNXsEbY1gj4MQ6PKnS0gu1S4s
+      - key: FIREBASE_AUTH_DOMAIN
+        value: bite-me-buddy.firebaseapp.com
+      - key: FIREBASE_PROJECT_ID
+        value: bite-me-buddy
+      - key: FIREBASE_STORAGE_BUCKET
+        value: bite-me-buddy.firebasestorage.app
+      - key: FIREBASE_MESSAGING_SENDER_ID
+        value: 387282094580
+      - key: FIREBASE_APP_ID
+        value: 1:387282094580:web:422e09cff55a0ed47bd1a1
+      - key: FIREBASE_MEASUREMENT_ID
+        value: G-DXE54QQNB4
