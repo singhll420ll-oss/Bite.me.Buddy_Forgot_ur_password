@@ -2,7 +2,7 @@ Flask==2.3.3
 firebase-admin==6.2.0
 python-dotenv==1.0.0
 pyotp==2.8.0
-psycopg[binary]==3.2.3
+psycopg2-binary
 Flask-SQLAlchemy==3.0.5
 gunicorn==21.2.0
 requests==2.31.0
