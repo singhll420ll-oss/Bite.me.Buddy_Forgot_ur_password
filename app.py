@@ -6,6 +6,8 @@ from models import User, PasswordResetLog
 from firebase_config import get_firebase_config
 from dotenv import load_dotenv
 import re
+import firebase_admin
+from firebase_admin import credentials, auth
 
 load_dotenv()
 
@@ -16,6 +18,22 @@ app.permanent_session_lifetime = timedelta(minutes=15)
 # ================== INIT DATABASE ==================
 if not init_app(app):
     print("⚠️ Database initialization failed")
+
+# ================== INIT FIREBASE ADMIN ==================
+if not firebase_admin._apps:
+    cred = credentials.Certificate({
+        "type": os.getenv("FIREBASE_TYPE"),
+        "project_id": os.getenv("FIREBASE_PROJECT_ID"),
+        "private_key_id": os.getenv("FIREBASE_PRIVATE_KEY_ID"),
+        "private_key": os.getenv("FIREBASE_PRIVATE_KEY").replace("\\n", "\n"),
+        "client_email": os.getenv("FIREBASE_CLIENT_EMAIL"),
+        "client_id": os.getenv("FIREBASE_CLIENT_ID"),
+        "auth_uri": os.getenv("FIREBASE_AUTH_URI"),
+        "token_uri": os.getenv("FIREBASE_TOKEN_URI"),
+        "auth_provider_x509_cert_url": os.getenv("FIREBASE_AUTH_PROVIDER_CERT_URL"),
+        "client_x509_cert_url": os.getenv("FIREBASE_CLIENT_CERT_URL")
+    })
+    firebase_admin.initialize_app(cred)
 
 # ================== ROUTES ==================
 @app.route('/')
@@ -43,19 +61,19 @@ def find_user_by_phone(phone):
     return User.query.filter_by(phone=phone).first()
 
 # ---------------- FIREBASE OTP FLOW ----------------
-
 @app.route('/api/start-reset', methods=['POST'])
 def start_reset():
     data = request.get_json()
     phone = data.get("phone", "")
-
     user = find_user_by_phone(phone)
     if not user:
         return jsonify({"success": False, "message": "Account not found"})
 
+    # Save session
     session["reset_user_id"] = user.id
     session["reset_phone"] = user.phone
 
+    # Log password reset attempt
     log = PasswordResetLog(
         user_id=user.id,
         phone=user.phone,
@@ -64,7 +82,6 @@ def start_reset():
     )
     db.session.add(log)
     db.session.commit()
-
     session["reset_log_id"] = log.id
 
     return jsonify({"success": True})
@@ -78,31 +95,37 @@ def firebase_verify():
     id_token = data.get("idToken")
 
     if not id_token:
-        return jsonify({"success": False, "message": "Token missing"})
+        return jsonify({"success": False, "message": "Token missing"}), 400
 
     try:
-        import firebase_admin
-        from firebase_admin import auth
-
         decoded = auth.verify_id_token(id_token)
         phone = decoded.get("phone_number")
 
         if not phone:
-            return jsonify({"success": False, "message": "Invalid token"})
+            return jsonify({"success": False, "message": "Invalid token"}), 400
 
+        # Find user in DB
+        user = User.query.filter_by(phone=phone[-10:]).first()
+        if not user:
+            return jsonify({"success": False, "message": "User not found"}), 404
+
+        # Set session
+        session["reset_user_id"] = user.id
+        session["reset_phone"] = user.phone
         session["otp_verified"] = True
 
+        # Update reset log
         if "reset_log_id" in session:
             log = PasswordResetLog.query.get(session["reset_log_id"])
             if log:
                 log.mark_verified("FIREBASE")
-
         db.session.commit()
+
         return jsonify({"success": True, "redirect": "/reset-password"})
 
     except Exception as e:
         print("Firebase verify failed:", e)
-        return jsonify({"success": False, "message": "OTP verification failed"})
+        return jsonify({"success": False, "message": "OTP verification failed"}), 400
 
 @app.route('/api/reset-password', methods=['POST'])
 def reset_password():
@@ -135,6 +158,8 @@ def reset_password():
 # ---------------- PAGES ----------------
 @app.route('/verify-otp')
 def verify_page():
+    if "reset_user_id" not in session:
+        return redirect("/")
     return render_template("verify_otp.html")
 
 @app.route('/reset-password')
