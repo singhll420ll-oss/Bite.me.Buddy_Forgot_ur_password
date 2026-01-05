@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bite Me Buddy - Forgot Password</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1><i class="fas fa-utensils"></i> Bite Me Buddy</h1>
+            <p class="tagline">Delicious Food & Services</p>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <h2><i class="fas fa-key"></i> Forgot Password</h2>
+                <p>Enter your registered phone number to reset password</p>
+            </div>
+            
+            <form id="phoneForm">
+                <div class="input-group">
+                    <div class="input-icon">
+                        <i class="fas fa-phone"></i>
+                    </div>
+                    <input type="tel" id="phone" name="phone" 
+                           placeholder="Enter your phone number (10 digits)" 
+                           pattern="[0-9]{10}" 
+                           maxlength="10"
+                           required>
+                    <div class="input-hint">e.g., 9876543210</div>
+                </div>
+                
+                <button type="submit" class="btn-primary" id="submitBtn">
+                    <i class="fas fa-paper-plane"></i> Send OTP
+                </button>
+                
+                <div class="help-text">
+                    <p><i class="fas fa-info-circle"></i> We'll send a 6-digit OTP to your phone</p>
+                </div>
+            </form>
+            
+            <div class="response" id="response"></div>
+            
+            <div class="footer-links">
+                <a href="#" onclick="window.history.back()">
+                    <i class="fas fa-arrow-left"></i> Back to Login
+                </a>
+                <a href="/api/health" target="_blank">
+                    <i class="fas fa-heartbeat"></i> Service Health
+                </a>
+            </div>
+        </div>
+        
+        <div class="instructions">
+            <h3><i class="fas fa-lightbulb"></i> How it works:</h3>
+            <ol>
+                <li>Enter your registered phone number</li>
+                <li>Receive OTP via SMS</li>
+                <li>Enter OTP to verify</li>
+                <li>Set new password</li>
+                <li>Login with new password</li>
+            </ol>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('phoneForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const phone = document.getElementById('phone').value;
+            const submitBtn = document.getElementById('submitBtn');
+            const responseDiv = document.getElementById('response');
+            
+            // Validation
+            if (!phone || phone.length !== 10) {
+                showResponse('Please enter a valid 10-digit phone number', 'error');
+                return;
+            }
+            
+            // Disable button
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sending OTP...';
+            
+            try {
+                const response = await fetch('/api/send-otp', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ phone: phone })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    showResponse(`OTP sent to ${result.phone}`, 'success');
+                    
+                    // Show OTP in development
+                    if (result.debug_otp) {
+                        showResponse(`Development OTP: <strong>${result.debug_otp}</strong>`, 'info');
+                    }
+                    
+                    // Redirect after delay
+                    setTimeout(() => {
+                        window.location.href = '/verify-otp';
+                    }, 2000);
+                } else {
+                    showResponse(result.message, 'error');
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = '<i class="fas fa-paper-plane"></i> Send OTP';
+                }
+            } catch (error) {
+                showResponse('Network error. Please check your connection.', 'error');
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="fas fa-paper-plane"></i> Send OTP';
+            }
+        });
+        
+        function showResponse(message, type) {
+            const responseDiv = document.getElementById('response');
+            responseDiv.innerHTML = `
+                <div class="alert alert-${type}">
+                    <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : 'info-circle'}"></i>
+                    ${message}
+                </div>
+            `;
+            responseDiv.style.display = 'block';
+        }
+    </script>
+</body>
+  </html>
