@@ -1,12 +1,9 @@
 import os
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy.orm import DeclarativeBase
 import psycopg
 
-class Base(DeclarativeBase):
-    pass
-
-db = SQLAlchemy(model_class=Base)
+# Simple initialization - NO Base class needed
+db = SQLAlchemy()
 
 def _get_database_url():
     DATABASE_URL = os.getenv("DATABASE_URL")
@@ -40,10 +37,13 @@ def init_app(app):
         }
         app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
+        # Initialize SQLAlchemy with app
         db.init_app(app)
 
         with app.app_context():
-            from models import OTP, PasswordResetLog
+            # Import all models here (AFTER db.init_app)
+            from models import User, OTP, PasswordResetLog
+            # Create tables
             db.create_all()
 
         print("✅ Database initialized successfully")
