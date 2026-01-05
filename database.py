@@ -1,6 +1,6 @@
 import os
 from flask_sqlalchemy import SQLAlchemy
-import psycopg
+import psycopg2
 
 # Simple initialization - NO Base class needed
 db = SQLAlchemy()
@@ -43,7 +43,6 @@ def init_app(app):
         with app.app_context():
             # Import all models here (AFTER db.init_app)
             from models import User, OTP, PasswordResetLog
-            # Create tables
             db.create_all()
 
         print("✅ Database initialized successfully")
@@ -56,7 +55,7 @@ def init_app(app):
 def test_connection():
     try:
         DATABASE_URL = _get_database_url()
-        conn = psycopg.connect(DATABASE_URL)
+        conn = psycopg2.connect(DATABASE_URL)
         conn.close()
         return True, "✅ Database connection successful"
     except Exception as e:
