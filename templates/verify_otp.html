@@ -1,256 +1,91 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Verify OTP - Bite Me Buddy</title>
-    <link rel="stylesheet" href="/static/style.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Verify OTP - Bite Me Buddy</title>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h1><i class="fas fa-utensils"></i> Bite Me Buddy</h1>
-            <p class="tagline">Verify Your Identity</p>
-        </div>
-        
-        <div class="card">
-            <div class="card-header">
-                <h2><i class="fas fa-shield-alt"></i> Enter OTP</h2>
-                <p>Enter the 6-digit OTP sent to your phone</p>
-            </div>
-            
-            <form id="otpForm">
-                <div class="otp-container">
-                    <input type="text" id="digit1" maxlength="1" oninput="moveToNext(1)" onkeyup="handleOtpInput(event, 1)">
-                    <input type="text" id="digit2" maxlength="1" oninput="moveToNext(2)" onkeyup="handleOtpInput(event, 2)">
-                    <input type="text" id="digit3" maxlength="1" oninput="moveToNext(3)" onkeyup="handleOtpInput(event, 3)">
-                    <input type="text" id="digit4" maxlength="1" oninput="moveToNext(4)" onkeyup="handleOtpInput(event, 4)">
-                    <input type="text" id="digit5" maxlength="1" oninput="moveToNext(5)" onkeyup="handleOtpInput(event, 5)">
-                    <input type="text" id="digit6" maxlength="1" oninput="moveToNext(6)" onkeyup="handleOtpInput(event, 6)">
-                </div>
-                
-                <input type="hidden" id="otpInput" name="otp">
-                
-                <div class="timer" id="timer">
-                    <i class="fas fa-clock"></i> OTP expires in: <span id="countdown">10:00</span>
-                </div>
-                
-                <button type="submit" class="btn-primary" id="verifyBtn">
-                    <i class="fas fa-check-circle"></i> Verify OTP
-                </button>
-                
-                <div class="resend-options">
-                    <p>Didn't receive OTP?</p>
-                    <button type="button" class="btn-secondary" id="resendBtn" disabled>
-                        <i class="fas fa-redo"></i> Resend OTP (<span id="resendTimer">60</span>s)
-                    </button>
-                </div>
-            </form>
-            
-            <div class="response" id="response"></div>
-            
-            <div class="footer-links">
-                <a href="/">
-                    <i class="fas fa-arrow-left"></i> Change Phone Number
-                </a>
-                <a href="#" onclick="clearSession()">
-                    <i class="fas fa-times"></i> Cancel Reset
-                </a>
-            </div>
-        </div>
-        
-        <div class="instructions">
-            <h3><i class="fas fa-lightbulb"></i> OTP Tips:</h3>
-            <ul>
-                <li>Check your SMS inbox for the OTP</li>
-                <li>OTP is valid for 10 minutes only</li>
-                <li>You can resend OTP after 60 seconds</li>
-                <li>Enter OTP quickly for security</li>
-            </ul>
-        </div>
-    </div>
+<div class="container">
+  <h1>Bite Me Buddy - Firebase OTP</h1>
+  <p>Enter your phone number to receive OTP:</p>
+  <input type="text" id="phoneNumber" placeholder="+91xxxxxxxxxx">
+  <div id="recaptcha-container"></div>
+  <button onclick="sendOTP()">Send OTP</button>
 
-    <script>
-        let timerInterval;
-        let resendInterval;
-        let totalSeconds = 600; // 10 minutes
-        let resendSeconds = 60;
-        
-        // Initialize timers
-        function startTimers() {
-            // OTP expiry timer
-            timerInterval = setInterval(() => {
-                totalSeconds--;
-                if (totalSeconds <= 0) {
-                    clearInterval(timerInterval);
-                    document.getElementById('countdown').textContent = 'Expired!';
-                    showResponse('OTP expired. Please request a new one.', 'error');
-                } else {
-                    const minutes = Math.floor(totalSeconds / 60);
-                    const seconds = totalSeconds % 60;
-                    document.getElementById('countdown').textContent = 
-                        `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-                }
-            }, 1000);
-            
-            // Resend timer
-            resendInterval = setInterval(() => {
-                resendSeconds--;
-                document.getElementById('resendTimer').textContent = resendSeconds;
-                
-                if (resendSeconds <= 0) {
-                    clearInterval(resendInterval);
-                    document.getElementById('resendBtn').disabled = false;
-                    document.getElementById('resendBtn').innerHTML = '<i class="fas fa-redo"></i> Resend OTP';
-                }
-            }, 1000);
-        }
-        
-        // OTP input handling
-        function moveToNext(current) {
-            const digit = document.getElementById(`digit${current}`);
-            if (digit.value.length === 1 && current < 6) {
-                document.getElementById(`digit${current + 1}`).focus();
+  <div id="otpDiv" style="display:none;">
+    <p>Enter OTP:</p>
+    <input type="text" id="otpInput" placeholder="6-digit OTP">
+    <button onclick="verifyOTP()">Verify OTP</button>
+  </div>
+
+  <div id="response"></div>
+</div>
+
+<script>
+  // Firebase config from backend
+  fetch('/api/firebase-config')
+    .then(res => res.json())
+    .then(config => {
+      firebase.initializeApp(config);
+      window.auth = firebase.auth();
+      window.recaptchaVerifier = new firebase.auth.RecaptchaVerifier('recaptcha-container', {
+        'size': 'normal',
+        'callback': (response) => { console.log('reCAPTCHA solved'); },
+        'expired-callback': () => { console.log('reCAPTCHA expired'); }
+      });
+      recaptchaVerifier.render();
+    });
+
+  let confirmationResult;
+
+  function sendOTP() {
+    const phoneNumber = document.getElementById('phoneNumber').value;
+    auth.signInWithPhoneNumber(phoneNumber, recaptchaVerifier)
+      .then(result => {
+        confirmationResult = result;
+        document.getElementById('otpDiv').style.display = 'block';
+        showResponse('OTP sent! Check your phone.', 'success');
+      })
+      .catch(error => {
+        showResponse(error.message, 'error');
+      });
+  }
+
+  function verifyOTP() {
+    const code = document.getElementById('otpInput').value;
+    confirmationResult.confirm(code)
+      .then(result => {
+        result.user.getIdToken().then(idToken => {
+          fetch('/api/firebase-verify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ idToken })
+          })
+          .then(res => res.json())
+          .then(data => {
+            if(data.success) {
+              showResponse('OTP verified! Redirecting...', 'success');
+              window.location.href = '/reset-password';
+            } else {
+              showResponse(data.message, 'error');
             }
-            updateHiddenInput();
-        }
-        
-        function handleOtpInput(event, current) {
-            // Handle backspace
-            if (event.key === 'Backspace' && current > 1 && document.getElementById(`digit${current}`).value === '') {
-                document.getElementById(`digit${current - 1}`).focus();
-            }
-            updateHiddenInput();
-        }
-        
-        function updateHiddenInput() {
-            let otp = '';
-            for (let i = 1; i <= 6; i++) {
-                otp += document.getElementById(`digit${i}`).value;
-            }
-            document.getElementById('otpInput').value = otp;
-        }
-        
-        // Resend OTP
-        document.getElementById('resendBtn').addEventListener('click', async function() {
-            const btn = this;
-            btn.disabled = true;
-            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Resending...';
-            
-            try {
-                const response = await fetch('/api/send-otp', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ resend: true })
-                });
-                
-                const result = await response.json();
-                
-                if (result.success) {
-                    showResponse('New OTP sent successfully', 'success');
-                    if (result.debug_otp) {
-                        showResponse(`New OTP: <strong>${result.debug_otp}</strong>`, 'info');
-                    }
-                    
-                    // Reset timers
-                    totalSeconds = 600;
-                    resendSeconds = 60;
-                    startTimers();
-                    
-                    // Clear OTP fields
-                    for (let i = 1; i <= 6; i++) {
-                        document.getElementById(`digit${i}`).value = '';
-                    }
-                    document.getElementById('digit1').focus();
-                } else {
-                    showResponse(result.message, 'error');
-                    btn.disabled = false;
-                    btn.innerHTML = '<i class="fas fa-redo"></i> Resend OTP';
-                }
-            } catch (error) {
-                showResponse('Network error', 'error');
-                btn.disabled = false;
-                btn.innerHTML = '<i class="fas fa-redo"></i> Resend OTP';
-            }
+          });
         });
-        
-        // Verify OTP
-        document.getElementById('otpForm').addEventListener('submit', async function(e) {
-            e.preventDefault();
-            
-            const otp = document.getElementById('otpInput').value;
-            const verifyBtn = document.getElementById('verifyBtn');
-            const responseDiv = document.getElementById('response');
-            
-            if (otp.length !== 6) {
-                showResponse('Please enter 6-digit OTP', 'error');
-                return;
-            }
-            
-            verifyBtn.disabled = true;
-            verifyBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Verifying...';
-            
-            try {
-                const response = await fetch('/api/verify-otp', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ otp: otp })
-                });
-                
-                const result = await response.json();
-                
-                if (result.success) {
-                    showResponse('OTP verified successfully!', 'success');
-                    setTimeout(() => {
-                        window.location.href = result.redirect || '/reset-password';
-                    }, 1500);
-                } else {
-                    showResponse(result.message, 'error');
-                    verifyBtn.disabled = false;
-                    verifyBtn.innerHTML = '<i class="fas fa-check-circle"></i> Verify OTP';
-                }
-            } catch (error) {
-                showResponse('Network error', 'error');
-                verifyBtn.disabled = false;
-                verifyBtn.innerHTML = '<i class="fas fa-check-circle"></i> Verify OTP';
-            }
-        });
-        
-        function showResponse(message, type) {
-            const responseDiv = document.getElementById('response');
-            responseDiv.innerHTML = `
-                <div class="alert alert-${type}">
-                    <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : 'info-circle'}"></i>
-                    ${message}
-                </div>
-            `;
-            responseDiv.style.display = 'block';
-        }
-        
-        function clearSession() {
-            fetch('/api/check-session', { method: 'DELETE' });
-            window.location.href = '/';
-        }
-        
-        // Start timers on page load
-        window.onload = function() {
-            startTimers();
-            document.getElementById('digit1').focus();
-            
-            // Check session
-            fetch('/api/check-session')
-                .then(res => res.json())
-                .then(data => {
-                    if (!data.otp_sent) {
-                        window.location.href = '/';
-                    }
-                });
-        };
-    </script>
+      })
+      .catch(error => {
+        showResponse('Invalid OTP', 'error');
+      });
+  }
+
+  function showResponse(msg, type) {
+    const div = document.getElementById('response');
+    div.innerHTML = `<p class="${type}">${msg}</p>`;
+  }
+</script>
 </body>
-  </html>
+</html>
