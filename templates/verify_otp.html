@@ -4,88 +4,182 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Verify OTP - Bite Me Buddy</title>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <link rel="stylesheet" href="/static/style.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 </head>
 <body>
 <div class="container">
-  <h1>Bite Me Buddy - Firebase OTP</h1>
-  <p>Enter your phone number to receive OTP:</p>
-  <input type="text" id="phoneNumber" placeholder="+91xxxxxxxxxx">
-  <div id="recaptcha-container"></div>
-  <button onclick="sendOTP()">Send OTP</button>
+    <div class="header">
+        <h1><i class="fas fa-utensils"></i> Bite Me Buddy</h1>
+        <p class="tagline">Verify Your Identity</p>
+    </div>
 
-  <div id="otpDiv" style="display:none;">
-    <p>Enter OTP:</p>
-    <input type="text" id="otpInput" placeholder="6-digit OTP">
-    <button onclick="verifyOTP()">Verify OTP</button>
-  </div>
+    <div class="card">
+        <div class="card-header">
+            <h2><i class="fas fa-shield-alt"></i> Enter OTP</h2>
+            <p>Enter the 6-digit OTP sent to your phone</p>
+        </div>
 
-  <div id="response"></div>
+        <input type="text" id="phoneNumber" placeholder="+91xxxxxxxxxx" style="margin-bottom:10px; padding:8px; width:100%;">
+        <div id="recaptcha-container" style="margin-bottom:10px;"></div>
+        <button class="btn-primary" onclick="sendOTP()">Send OTP</button>
+
+        <div id="otpDiv" style="display:none; margin-top:15px;">
+            <div class="otp-container">
+                <input type="text" id="digit1" maxlength="1" oninput="moveToNext(1)" onkeyup="handleOtpInput(event,1)">
+                <input type="text" id="digit2" maxlength="1" oninput="moveToNext(2)" onkeyup="handleOtpInput(event,2)">
+                <input type="text" id="digit3" maxlength="1" oninput="moveToNext(3)" onkeyup="handleOtpInput(event,3)">
+                <input type="text" id="digit4" maxlength="1" oninput="moveToNext(4)" onkeyup="handleOtpInput(event,4)">
+                <input type="text" id="digit5" maxlength="1" oninput="moveToNext(5)" onkeyup="handleOtpInput(event,5)">
+                <input type="text" id="digit6" maxlength="1" oninput="moveToNext(6)" onkeyup="handleOtpInput(event,6)">
+            </div>
+
+            <button class="btn-primary" onclick="verifyOTP()">Verify OTP</button>
+
+            <div class="timer" id="timer">
+                <i class="fas fa-clock"></i> OTP expires in: <span id="countdown">10:00</span>
+            </div>
+
+            <div class="resend-options">
+                <button class="btn-secondary" id="resendBtn" disabled>
+                    <i class="fas fa-redo"></i> Resend OTP (<span id="resendTimer">60</span>s)
+                </button>
+            </div>
+        </div>
+
+        <div id="response" style="margin-top:10px;"></div>
+    </div>
 </div>
 
 <script>
-  // Firebase config from backend
-  fetch('/api/firebase-config')
-    .then(res => res.json())
-    .then(config => {
-      firebase.initializeApp(config);
-      window.auth = firebase.auth();
-      window.recaptchaVerifier = new firebase.auth.RecaptchaVerifier('recaptcha-container', {
+    // ---------------- Firebase Config ----------------
+    const firebaseConfig = {
+        apiKey: "AIzaSyBmZG2Xi5WNXsEbY1gj4MQ6PKnS0gu1S4s",
+        authDomain: "bite-me-buddy.firebaseapp.com",
+        projectId: "bite-me-buddy",
+        storageBucket: "bite-me-buddy.firebasestorage.app",
+        messagingSenderId: "387282094580",
+        appId: "1:387282094580:web:422e09cff55a0ed47bd1a1",
+        measurementId: "G-DXE54QQNB4"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+    const recaptchaVerifier = new firebase.auth.RecaptchaVerifier('recaptcha-container', {
         'size': 'normal',
-        'callback': (response) => { console.log('reCAPTCHA solved'); },
+        'callback': () => { console.log('reCAPTCHA solved'); },
         'expired-callback': () => { console.log('reCAPTCHA expired'); }
-      });
-      recaptchaVerifier.render();
+    });
+    recaptchaVerifier.render();
+
+    let confirmationResult;
+    let totalSeconds = 600, resendSeconds = 60, timerInterval, resendInterval;
+
+    // ---------------- OTP Send ----------------
+    function sendOTP() {
+        const phoneNumber = document.getElementById('phoneNumber').value;
+        if(!phoneNumber){ showResponse('Enter phone number','error'); return; }
+
+        auth.signInWithPhoneNumber(phoneNumber, recaptchaVerifier)
+        .then(result => {
+            confirmationResult = result;
+            document.getElementById('otpDiv').style.display='block';
+            showResponse('OTP sent! Check your phone.','success');
+            resetOTPInputs();
+            startTimers();
+        })
+        .catch(error => { showResponse(error.message,'error'); });
+    }
+
+    // ---------------- OTP Verify ----------------
+    function verifyOTP() {
+        let otp='';
+        for(let i=1;i<=6;i++){ otp+=document.getElementById(`digit${i}`).value; }
+
+        if(otp.length!==6){ showResponse('Enter 6-digit OTP','error'); return; }
+
+        confirmationResult.confirm(otp)
+        .then(result => {
+            result.user.getIdToken().then(idToken=>{
+                fetch('/api/firebase-verify',{
+                    method:'POST',
+                    headers:{'Content-Type':'application/json'},
+                    body:JSON.stringify({idToken})
+                })
+                .then(res=>res.json())
+                .then(data=>{
+                    if(data.success){
+                        showResponse('OTP verified! Redirecting...','success');
+                        setTimeout(()=>{ window.location.href='/reset-password'; },1500);
+                    }else showResponse(data.message,'error');
+                });
+            });
+        })
+        .catch(err=>showResponse('Invalid OTP','error'));
+    }
+
+    // ---------------- OTP Input Boxes ----------------
+    function moveToNext(current){
+        const digit=document.getElementById(`digit${current}`);
+        if(digit.value.length===1 && current<6) document.getElementById(`digit${current+1}`).focus();
+        updateHiddenInput();
+    }
+
+    function handleOtpInput(event,current){
+        if(event.key==='Backspace' && current>1 && document.getElementById(`digit${current}`).value===''){
+            document.getElementById(`digit${current-1}`).focus();
+        }
+        updateHiddenInput();
+    }
+
+    function updateHiddenInput(){
+        let otp='';
+        for(let i=1;i<=6;i++){ otp+=document.getElementById(`digit${i}`).value; }
+        // hidden input if needed
+    }
+
+    function resetOTPInputs(){
+        for(let i=1;i<=6;i++){ document.getElementById(`digit${i}`).value=''; }
+        document.getElementById('digit1').focus();
+    }
+
+    // ---------------- Timers ----------------
+    function startTimers(){
+        clearInterval(timerInterval); clearInterval(resendInterval);
+        totalSeconds=600; resendSeconds=60;
+        document.getElementById('resendBtn').disabled=true;
+
+        timerInterval=setInterval(()=>{
+            totalSeconds--;
+            if(totalSeconds<=0){ clearInterval(timerInterval); document.getElementById('countdown').textContent='Expired!'; }
+            else{
+                let m=Math.floor(totalSeconds/60), s=totalSeconds%60;
+                document.getElementById('countdown').textContent=`${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`;
+            }
+        },1000);
+
+        resendInterval=setInterval(()=>{
+            resendSeconds--;
+            document.getElementById('resendTimer').textContent=resendSeconds;
+            if(resendSeconds<=0){ clearInterval(resendInterval); document.getElementById('resendBtn').disabled=false; }
+        },1000);
+    }
+
+    document.getElementById('resendBtn').addEventListener('click',()=>{
+        sendOTP();
+        document.getElementById('resendBtn').disabled=true;
     });
 
-  let confirmationResult;
+    // ---------------- Response ----------------
+    function showResponse(msg,type){
+        document.getElementById('response').innerHTML=`<p class="${type}">${msg}</p>`;
+    }
 
-  function sendOTP() {
-    const phoneNumber = document.getElementById('phoneNumber').value;
-    auth.signInWithPhoneNumber(phoneNumber, recaptchaVerifier)
-      .then(result => {
-        confirmationResult = result;
-        document.getElementById('otpDiv').style.display = 'block';
-        showResponse('OTP sent! Check your phone.', 'success');
-      })
-      .catch(error => {
-        showResponse(error.message, 'error');
-      });
-  }
-
-  function verifyOTP() {
-    const code = document.getElementById('otpInput').value;
-    confirmationResult.confirm(code)
-      .then(result => {
-        result.user.getIdToken().then(idToken => {
-          fetch('/api/firebase-verify', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ idToken })
-          })
-          .then(res => res.json())
-          .then(data => {
-            if(data.success) {
-              showResponse('OTP verified! Redirecting...', 'success');
-              window.location.href = '/reset-password';
-            } else {
-              showResponse(data.message, 'error');
-            }
-          });
-        });
-      })
-      .catch(error => {
-        showResponse('Invalid OTP', 'error');
-      });
-  }
-
-  function showResponse(msg, type) {
-    const div = document.getElementById('response');
-    div.innerHTML = `<p class="${type}">${msg}</p>`;
-  }
+    window.onload=()=>{ document.getElementById('digit1').focus(); };
 </script>
 </body>
 </html>
