@@ -1,9 +1,7 @@
 import os
 from dotenv import load_dotenv
-
 load_dotenv()
 
-# Frontend JS ke liye config
 def get_firebase_config():
     return {
         "apiKey": os.getenv("FIREBASE_API_KEY"),
@@ -15,20 +13,18 @@ def get_firebase_config():
         "measurementId": os.getenv("FIREBASE_MEASUREMENT_ID"),
     }
 
-# Firebase Admin SDK init
 def initialize_firebase_admin():
     try:
         import firebase_admin
         from firebase_admin import credentials
 
-        # Agar already initialized hai
+        # avoid double init
         try:
             firebase_admin.get_app()
             return True
         except ValueError:
             pass
 
-        # Service account credentials
         private_key = os.getenv("FIREBASE_PRIVATE_KEY").replace("\\n", "\n")
 
         cred = credentials.Certificate({
