@@ -3,15 +3,23 @@ services:
     name: bite-me-buddy-password-reset
     env: python
     region: singapore
+
+    pythonVersion: 3.11.9
+
     buildCommand: |
+      pip install --upgrade pip
       pip install -r requirements.txt
       python init_db.py
+
     startCommand: gunicorn app:app
+
     envVars:
       - key: FLASK_SECRET_KEY
         generateValue: true
+
       - key: DATABASE_URL
         value: postgresql://bite_me_buddy_a6lb_user:68tt0EeyD9wKTb36ov9zSOmHvDS78mT4@dpg-d5ble8hr0fns73924vr0-a/bite_me_buddy_a6lb
+
       - key: FIREBASE_API_KEY
         value: AIzaSyBmZG2Xi5WNXsEbY1gj4MQ6PKnS0gu1S4s
       - key: FIREBASE_AUTH_DOMAIN
