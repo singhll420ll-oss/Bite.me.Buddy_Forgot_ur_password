@@ -1,7 +1,7 @@
 from flask import Flask, render_template, request, jsonify, session, redirect
 import os
 from datetime import datetime, timedelta
-from database import db, init_app, test_connection
+from database import db, init_app
 from models import User, PasswordResetLog
 from firebase_config import get_firebase_config, initialize_firebase_admin
 from dotenv import load_dotenv
@@ -13,28 +13,15 @@ app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "bite-me-buddy-2024-secret")
 app.permanent_session_lifetime = timedelta(minutes=15)
 
-# ================== INIT DATABASE ==================
+# ============ DATABASE INIT ============
 if not init_app(app):
     print("⚠️ Database initialization failed")
 
-# ================== INIT FIREBASE ==================
-initialize_firebase_admin()
+# ============ FIREBASE ADMIN INIT ============
+if not initialize_firebase_admin():
+    print("⚠️ Firebase Admin not initialized. OTP SMS won't work.")
 
-# ================== ROUTES ==================
-@app.route('/')
-def home():
-    return render_template('index.html')
-
-@app.route('/api/health')
-def health_check():
-    db_status, db_msg = test_connection()
-    return jsonify({
-        "status": "running",
-        "database": db_msg,
-        "timestamp": datetime.utcnow().isoformat()
-    })
-
-# ---------------- HELPERS ----------------
+# ============ HELPERS ============
 def normalize_phone(phone):
     digits = re.sub(r'\D', '', phone)
     return digits[-10:] if len(digits) >= 10 else None
@@ -45,12 +32,30 @@ def find_user_by_phone(phone):
         return None
     return User.query.filter_by(phone=phone).first()
 
-# ---------------- FIREBASE OTP FLOW ----------------
+# ============ ROUTES ============
+@app.route('/')
+def home():
+    return render_template('index.html')
+
+@app.route('/verify-otp')
+def verify_page():
+    return render_template("verify_otp.html")
+
+@app.route('/reset-password')
+def reset_page():
+    if not session.get("otp_verified"):
+        return redirect("/")
+    return render_template("reset_password.html")
+
+@app.route('/api/firebase-config')
+def firebase_config_api():
+    return jsonify(get_firebase_config())
+
+# -------------- START RESET --------------
 @app.route('/api/start-reset', methods=['POST'])
 def start_reset():
     data = request.get_json()
     phone = data.get("phone", "")
-
     user = find_user_by_phone(phone)
     if not user:
         return jsonify({"success": False, "message": "Account not found"})
@@ -66,16 +71,15 @@ def start_reset():
     )
     db.session.add(log)
     db.session.commit()
-
     session["reset_log_id"] = log.id
 
     return jsonify({"success": True})
 
+# -------------- FIREBASE OTP VERIFY --------------
 @app.route('/api/firebase-verify', methods=['POST'])
 def firebase_verify():
     data = request.get_json()
     id_token = data.get("idToken")
-
     if not id_token:
         return jsonify({"success": False, "message": "Token missing"})
 
@@ -85,17 +89,14 @@ def firebase_verify():
 
         decoded = auth.verify_id_token(id_token)
         phone = decoded.get("phone_number")
-
         if not phone:
             return jsonify({"success": False, "message": "Invalid token"})
 
         session["otp_verified"] = True
-
         if "reset_log_id" in session:
             log = PasswordResetLog.query.get(session["reset_log_id"])
             if log:
                 log.mark_verified("FIREBASE")
-
         db.session.commit()
         return jsonify({"success": True, "redirect": "/reset-password"})
 
@@ -103,6 +104,7 @@ def firebase_verify():
         print("Firebase verify failed:", e)
         return jsonify({"success": False, "message": "OTP verification failed"})
 
+# -------------- RESET PASSWORD --------------
 @app.route('/api/reset-password', methods=['POST'])
 def reset_password():
     if not session.get("otp_verified"):
@@ -120,32 +122,24 @@ def reset_password():
         return jsonify({"success": False, "message": "User not found"})
 
     user.set_password(new_password)
-
     if "reset_log_id" in session:
         log = PasswordResetLog.query.get(session["reset_log_id"])
         if log:
             log.mark_completed()
-
     db.session.commit()
     session.clear()
-
     return jsonify({"success": True, "message": "Password reset successful"})
 
-# ---------------- PAGES ----------------
-@app.route('/verify-otp')
-def verify_page():
-    return render_template("verify_otp.html")
+# -------------- HEALTH CHECK --------------
+@app.route('/api/health')
+def health_check():
+    db_status, db_msg = test_connection()
+    return jsonify({
+        "status": "running",
+        "database": db_msg,
+        "timestamp": datetime.utcnow().isoformat()
+    })
 
-@app.route('/reset-password')
-def reset_page():
-    if not session.get("otp_verified"):
-        return redirect("/")
-    return render_template("reset_password.html")
-
-@app.route('/api/firebase-config')
-def firebase_config_api():
-    return jsonify(get_firebase_config())
-
-# ---------------- RUN ----------------
+# ============ RUN ============
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)), debug=True)
